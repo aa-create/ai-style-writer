@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+﻿import { NextResponse } from "next/server";
+import { getCurrentUserId } from "@/lib/auth";
 import { saveGenerationHistory } from "@/lib/style-service";
 import type { ChatMessage } from "@/lib/prompt-builder";
 
@@ -11,13 +11,9 @@ type HistoryBody = {
 
 export async function POST(request: Request) {
   try {
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "????" }, { status: 401 });
+    const userId = getCurrentUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "未登录。" }, { status: 401 });
     }
 
     const body = (await request.json()) as HistoryBody;
@@ -26,13 +22,13 @@ export async function POST(request: Request) {
     const firstUserMessage = messages.find((item) => item.role === "user")?.content?.trim() ?? "";
 
     if (!firstUserMessage || !finalOutput) {
-      return NextResponse.json({ error: "???????????" }, { status: 400 });
+      return NextResponse.json({ error: "缺少保存历史所需内容。" }, { status: 400 });
     }
 
-    await saveGenerationHistory(user.id, body.materialType ?? "propaganda", firstUserMessage, finalOutput);
+    await saveGenerationHistory(userId, body.materialType ?? "propaganda", firstUserMessage, finalOutput);
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "???????";
+    const message = error instanceof Error ? error.message : "保存历史失败。";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

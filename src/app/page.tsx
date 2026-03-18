@@ -1,17 +1,11 @@
-import Image from "next/image";
-import Link from "next/link";
+﻿import Image from "next/image";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUserId } from "@/lib/auth";
 
 const tags = ["专属知识库", "智能对话写作"];
 
-export default async function Home() {
-  const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (session) {
+export default function Home() {
+  if (getCurrentUserId()) {
     redirect("/app/write");
   }
 
@@ -45,12 +39,12 @@ export default async function Home() {
               </div>
 
               <div className="mt-7 flex">
-                <Link
+                <a
                   href="/login"
                   className="inline-flex items-center justify-center rounded-full bg-slate-900 px-6 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
                 >
                   立即登录
-                </Link>
+                </a>
               </div>
             </div>
 

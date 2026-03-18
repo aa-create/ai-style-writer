@@ -1,5 +1,5 @@
 ﻿import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUserId } from "@/lib/auth";
 import { learnFromAnalysis } from "@/lib/style-service";
 import type { SubtitleStyle } from "@/lib/defaults";
 
@@ -19,16 +19,15 @@ type LearnBody = {
 
 export async function POST(request: Request) {
   try {
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "未登录。" }, { status: 401 });
+    const userId = getCurrentUserId();
+    if (!userId) return NextResponse.json({ error: "未登录。" }, { status: 401 });
 
     const body = (await request.json()) as LearnBody;
     const materialType = body.materialType ?? "propaganda";
     const content = body.content?.trim() ?? "";
     if (!content || !body.analysis) return NextResponse.json({ error: "缺少学习所需内容。" }, { status: 400 });
 
-    const result = await learnFromAnalysis(user.id, materialType, content, body.analysis);
+    const result = await learnFromAnalysis(userId, materialType, content, body.analysis);
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "学习范文失败。";

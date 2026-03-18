@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { PDFParse } from "pdf-parse";
+import { getCurrentUserId } from "@/lib/auth";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
@@ -11,6 +12,11 @@ function getErrorMessage(error: unknown) {
 
 export async function POST(request: Request) {
   try {
+    const userId = getCurrentUserId();
+    if (!userId) {
+      return new NextResponse("未登录。", { status: 401 });
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
 

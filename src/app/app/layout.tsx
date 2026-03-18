@@ -1,9 +1,8 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 const tabs = [
   { href: "/app/write", label: "写稿" },
@@ -24,8 +23,7 @@ export default function AppLayout({
 
     setSigningOut(true);
     try {
-      const supabase = createClient();
-      await supabase.auth.signOut();
+      await fetch("/api/auth/logout", { method: "POST" });
       router.replace("/login");
       router.refresh();
     } finally {

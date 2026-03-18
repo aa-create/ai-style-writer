@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+
+type Mode = "login" | "register";
 
 export default function LoginPage() {
   const router = useRouter();
+  const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -14,21 +16,12 @@ export default function LoginPage() {
   useEffect(() => {
     async function checkSession() {
       try {
-        const supabase = createClient();
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        if (session) {
-          router.replace("/app");
+        const response = await fetch("/api/auth/me", { cache: "no-store" });
+        if (response.ok) {
+          router.replace("/app/write");
         }
-      } catch (sessionError) {
-        const message =
-          sessionError instanceof Error
-            ? sessionError.message
-            : "Supabase 配置异常，请检查 .env.local。";
-
-        setError(message);
+      } catch {
+        // 忽略初始化检测失败，交给用户主动登录。
       }
     }
 
@@ -47,70 +40,51 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const supabase = createClient();
-      const signInResult = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
+      const response = await fetch(mode === "login" ? "/api/auth/login" : "/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
       });
+      const result = await response.json();
 
-      if (!signInResult.error) {
-        router.replace("/app");
-        router.refresh();
-        setIsLoading(false);
-        return;
+      if (!response.ok) {
+        throw new Error(result.error || (mode === "login" ? "登录失败，请稍后重试。" : "注册失败，请稍后重试。"));
       }
 
-      const signUpResult = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-      });
-
-      if (signUpResult.error) {
-        setError(signInResult.error.message || signUpResult.error.message);
-        setIsLoading(false);
-        return;
-      }
-
-      if (signUpResult.data.session) {
-        router.replace("/app");
-        router.refresh();
-        setIsLoading(false);
-        return;
-      }
-
-      const retrySignInResult = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-
-      if (retrySignInResult.error) {
-        setError(retrySignInResult.error.message);
-        setIsLoading(false);
-        return;
-      }
-
-      router.replace("/app");
+      router.replace("/app/write");
       router.refresh();
     } catch (submitError) {
-      const message =
-        submitError instanceof Error
-          ? submitError.message
-          : "登录失败，请稍后重试。";
-
-      setError(message);
+      setError(submitError instanceof Error ? submitError.message : "提交失败，请稍后重试。");
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-8 space-y-2 text-center">
-          <h1 className="text-2xl font-semibold text-slate-900">邮箱登录</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">邮箱{mode === "login" ? "登录" : "注册"}</h1>
           <p className="text-sm text-slate-500">
-            首次使用会自动注册，成功后进入写稿工作台。
+            使用自建账号体系登录，成功后进入写稿工作台。
           </p>
+        </div>
+
+        <div className="mb-6 inline-flex rounded-full bg-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => setMode("login")}
+            className={`rounded-full px-4 py-2 text-sm ${mode === "login" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+          >
+            登录
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("register")}
+            className={`rounded-full px-4 py-2 text-sm ${mode === "register" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+          >
+            注册
+          </button>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
@@ -141,7 +115,7 @@ export default function LoginPage() {
               onChange={(event) => setPassword(event.target.value)}
               placeholder="请输入密码"
               className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
-              autoComplete="current-password"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
               disabled={isLoading}
             />
           </div>
@@ -157,7 +131,7 @@ export default function LoginPage() {
             disabled={isLoading}
             className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
           >
-            {isLoading ? "提交中..." : "登录 / 注册"}
+            {isLoading ? "提交中..." : mode === "login" ? "登录" : "注册"}
           </button>
         </form>
       </div>

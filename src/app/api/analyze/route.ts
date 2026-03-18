@@ -1,6 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { callAI } from "@/lib/ai/client";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUserId } from "@/lib/auth";
 
 const analyzePrompt = `你是公文写作分析专家。分析范文的写作特征，返回纯 JSON（不要代码块标记）：
 {
@@ -60,9 +60,8 @@ function buildFallback(text: string) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "未登录。" }, { status: 401 });
+    const userId = getCurrentUserId();
+    if (!userId) return NextResponse.json({ error: "未登录。" }, { status: 401 });
 
     const { text } = (await request.json()) as { text?: string };
     if (!text?.trim()) return NextResponse.json({ error: "请先输入范文内容。" }, { status: 400 });

@@ -1,6 +1,5 @@
 ﻿import "server-only";
 
-import { createClient } from "@supabase/supabase-js";
 import { callAI } from "@/lib/ai/client";
 import {
   defaultGlobalPhrases,
@@ -10,6 +9,7 @@ import {
   type PhraseMap,
   type SubtitleStyle,
 } from "@/lib/defaults";
+import pool from "@/lib/db";
 
 type GlobalPhrasesRecord = { user_id: string; phrases: PhraseMap };
 type LearnAnalysis = {
@@ -21,26 +21,22 @@ type LearnAnalysis = {
   paragraph_style: string;
   best_paragraph: string;
 };
-type LearnedArticleRecord = {
+type LearnedArticleRow = {
   id: string;
-  title?: string | null;
+  preview: string;
   material_type: string;
-  content: string;
   analysis?: LearnAnalysis | null;
   created_at: string;
 };
 
-function getServiceEnv() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRoleKey) throw new Error("缺少服务端 Supabase 环境变量，请检查 .env.local 配置。");
-  return { url, serviceRoleKey };
-}
-
-function createServiceClient() {
-  const { url, serviceRoleKey } = getServiceEnv();
-  return createClient(url, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
-}
+type StyleRuleRow = {
+  rules?: Partial<MaterialStyleRules["rules"]>;
+  type_phrases?: PhraseMap;
+  subtitle_styles?: SubtitleStyle[];
+  style_summary?: string;
+  example_paragraphs?: string[];
+  stats?: { learned_count?: number };
+};
 
 function mergePhraseMaps(...maps: PhraseMap[]) {
   const merged: PhraseMap = {};
@@ -56,7 +52,7 @@ function normalizeGlobalPhrases(phrases?: PhraseMap) {
   return mergePhraseMaps(defaultGlobalPhrases.phrases, phrases ?? {});
 }
 
-function normalizeStyleRules(input?: Partial<MaterialStyleRules> | null): MaterialStyleRules {
+function normalizeStyleRules(input?: StyleRuleRow | null): MaterialStyleRules {
   return {
     rules: {
       ...defaultPropagandaStyleRule.rules,
@@ -73,11 +69,19 @@ function normalizeStyleRules(input?: Partial<MaterialStyleRules> | null): Materi
   };
 }
 
-function normalizeLearnedArticle(record: LearnedArticleRecord) {
+function inferArticleTitle(content: string) {
+  const firstLine = content.split(/\r?\n/).map((item) => item.trim()).find(Boolean) ?? "未命名范文";
+  return firstLine.slice(0, 40);
+}
+
+function normalizeLearnedArticle(record: LearnedArticleRow) {
   return {
-    ...record,
-    title: record.title?.trim() || inferArticleTitle(record.content),
+    id: record.id,
+    title: inferArticleTitle(record.preview),
+    material_type: record.material_type,
+    content: record.preview,
     analysis: record.analysis ?? null,
+    created_at: record.created_at,
   };
 }
 
@@ -108,52 +112,76 @@ function countAllPhrases(phrases: PhraseMap) {
     .reduce((total, [, values]) => total + values.length, 0);
 }
 
-function inferArticleTitle(content: string) {
-  const firstLine = content.split(/\r?\n/).map((item) => item.trim()).find(Boolean) ?? "未命名范文";
-  return firstLine.slice(0, 40);
-}
-
 async function updateStyleRuleRecord(userId: string, materialType: string, styleRules: MaterialStyleRules) {
-  const result = await createServiceClient()
-    .from("style_rules")
-    .update(styleRules)
-    .eq("user_id", userId)
-    .eq("material_type", materialType)
-    .select("rules, type_phrases, subtitle_styles, style_summary, example_paragraphs, stats")
-    .single();
-  if (result.error) throw new Error(`更新类型规则失败：${result.error.message}`);
-  return normalizeStyleRules(result.data as Partial<MaterialStyleRules>);
+  const result = await pool.query(
+    `update style_rules
+        set rules = $1::jsonb,
+            type_phrases = $2::jsonb,
+            subtitle_styles = $3::jsonb,
+            style_summary = $4,
+            example_paragraphs = $5::jsonb,
+            stats = $6::jsonb,
+            updated_at = now()
+      where user_id = $7 and material_type = $8
+      returning rules, type_phrases, subtitle_styles, style_summary, example_paragraphs, stats`,
+    [
+      JSON.stringify(styleRules.rules),
+      JSON.stringify(styleRules.type_phrases),
+      JSON.stringify(styleRules.subtitle_styles),
+      styleRules.style_summary,
+      JSON.stringify(styleRules.example_paragraphs),
+      JSON.stringify(styleRules.stats),
+      userId,
+      materialType,
+    ],
+  );
+  if (result.rows.length === 0) throw new Error("更新类型规则失败：未找到对应记录。");
+  return normalizeStyleRules(result.rows[0] as StyleRuleRow);
 }
 
 export async function getOrCreateUserData(userId: string) {
-  const supabase = createServiceClient();
-  const globalResult = await supabase.from("user_global_phrases").select("user_id, phrases").eq("user_id", userId).maybeSingle<GlobalPhrasesRecord>();
-  if (globalResult.error) throw new Error(`读取全局词汇失败：${globalResult.error.message}`);
-  if (!globalResult.data) {
-    const insertResult = await supabase.from("user_global_phrases").insert({ user_id: userId, phrases: defaultGlobalPhrases.phrases });
-    if (insertResult.error) throw new Error(`初始化全局词汇失败：${insertResult.error.message}`);
-  }
+  await pool.query(
+    `insert into user_global_phrases (user_id, phrases)
+     values ($1, $2::jsonb)
+     on conflict (user_id) do nothing`,
+    [userId, JSON.stringify(defaultGlobalPhrases.phrases)],
+  );
 
-  const styleResult = await supabase.from("style_rules").select("user_id, material_type, rules, type_phrases, subtitle_styles, style_summary, example_paragraphs, stats").eq("user_id", userId).eq("material_type", "propaganda").maybeSingle();
-  if (styleResult.error) throw new Error(`读取风格规则失败：${styleResult.error.message}`);
-  if (!styleResult.data) {
-    const insertResult = await supabase.from("style_rules").insert({ user_id: userId, material_type: "propaganda", ...defaultPropagandaStyleRule });
-    if (insertResult.error) throw new Error(`初始化风格规则失败：${insertResult.error.message}`);
-  }
+  await pool.query(
+    `insert into style_rules (
+        user_id, material_type, rules, type_phrases, subtitle_styles, style_summary, example_paragraphs, stats
+      ) values ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7::jsonb, $8::jsonb)
+      on conflict (user_id, material_type) do nothing`,
+    [
+      userId,
+      "propaganda",
+      JSON.stringify(defaultPropagandaStyleRule.rules),
+      JSON.stringify(defaultPropagandaStyleRule.type_phrases),
+      JSON.stringify(defaultPropagandaStyleRule.subtitle_styles),
+      defaultPropagandaStyleRule.style_summary,
+      JSON.stringify(defaultPropagandaStyleRule.example_paragraphs),
+      JSON.stringify(defaultPropagandaStyleRule.stats),
+    ],
+  );
 }
 
 export async function getGlobalPhrases(userId: string) {
   await getOrCreateUserData(userId);
-  const result = await createServiceClient().from("user_global_phrases").select("phrases").eq("user_id", userId).single<GlobalPhrasesRecord>();
-  if (result.error) throw new Error(`读取全局词汇失败：${result.error.message}`);
-  return { phrases: normalizeGlobalPhrases(result.data.phrases) };
+  const result = await pool.query("select phrases from user_global_phrases where user_id = $1 limit 1", [userId]);
+  const data = result.rows[0] as GlobalPhrasesRecord | undefined;
+  if (!data) throw new Error("读取全局词汇失败：未找到记录。");
+  return { phrases: normalizeGlobalPhrases(data.phrases) };
 }
 
 export async function getStyleRules(userId: string, materialType: string) {
   await getOrCreateUserData(userId);
-  const result = await createServiceClient().from("style_rules").select("rules, type_phrases, subtitle_styles, style_summary, example_paragraphs, stats").eq("user_id", userId).eq("material_type", materialType).single();
-  if (result.error) throw new Error(`读取类型规则失败：${result.error.message}`);
-  return normalizeStyleRules(result.data as Partial<MaterialStyleRules>);
+  const result = await pool.query(
+    `select rules, type_phrases, subtitle_styles, style_summary, example_paragraphs, stats
+       from style_rules where user_id = $1 and material_type = $2 limit 1`,
+    [userId, materialType],
+  );
+  if (result.rows.length === 0) throw new Error("读取类型规则失败：未找到记录。");
+  return normalizeStyleRules(result.rows[0] as StyleRuleRow);
 }
 
 export async function getMergedPhrases(userId: string, materialType: string) {
@@ -163,9 +191,15 @@ export async function getMergedPhrases(userId: string, materialType: string) {
 
 export async function replaceGlobalPhrases(userId: string, phrases: PhraseMap) {
   const normalized = normalizeGlobalPhrases(phrases);
-  const result = await createServiceClient().from("user_global_phrases").update({ phrases: normalized }).eq("user_id", userId).select("phrases").single<GlobalPhrasesRecord>();
-  if (result.error) throw new Error(`覆盖全局词汇失败：${result.error.message}`);
-  return { phrases: normalizeGlobalPhrases(result.data.phrases) };
+  const result = await pool.query(
+    `update user_global_phrases
+        set phrases = $1::jsonb, updated_at = now()
+      where user_id = $2
+      returning phrases`,
+    [JSON.stringify(normalized), userId],
+  );
+  if (result.rows.length === 0) throw new Error("覆盖全局词汇失败：未找到记录。");
+  return { phrases: normalizeGlobalPhrases((result.rows[0] as { phrases: PhraseMap }).phrases) };
 }
 
 export async function updateStyleRules(userId: string, materialType: string, updates: Partial<MaterialStyleRules>) {
@@ -182,50 +216,46 @@ export async function updateStyleRules(userId: string, materialType: string, upd
   return updateStyleRuleRecord(userId, materialType, payload);
 }
 
-export async function saveGenerationHistory(
-  userId: string,
-  materialType: string,
-  rawInput: string,
-  finalOutput: string,
-) {
-  const result = await createServiceClient().from("generations").insert({
-    user_id: userId,
-    material_type: materialType,
-    raw_input: rawInput,
-    output: finalOutput,
-    extracted_points: null,
-    style_used: null,
-    content: finalOutput,
-  });
-  if (result.error) throw new Error(`保存生成记录失败：${result.error.message}`);
+export async function saveGenerationHistory(userId: string, materialType: string, rawInput: string, finalOutput: string) {
+  await pool.query(
+    `insert into generations (user_id, material_type, raw_input, output)
+     values ($1, $2, $3, $4)`,
+    [userId, materialType, rawInput, finalOutput],
+  );
 }
 
 export async function getLearnedArticles(userId: string, materialType: string) {
-  const result = await createServiceClient().from("learned_articles").select("id, title, material_type, content, analysis, created_at").eq("user_id", userId).eq("material_type", materialType).order("created_at", { ascending: false }).returns<LearnedArticleRecord[]>();
-  if (result.error) throw new Error(`读取已学范文失败：${result.error.message}`);
-  return (result.data ?? []).map(normalizeLearnedArticle);
+  const result = await pool.query(
+    `select id, preview, material_type, analysis, created_at
+       from learned_articles
+      where user_id = $1 and material_type = $2
+      order by created_at desc`,
+    [userId, materialType],
+  );
+  return result.rows.map((row) => normalizeLearnedArticle(row as LearnedArticleRow));
 }
 
 export async function saveLearnedArticle(userId: string, materialType: string, content: string, analysis: LearnAnalysis) {
-  const preview = content.replace(/\s+/g, " ").trim().slice(0, 80);
-  const result = await createServiceClient().from("learned_articles").insert({ user_id: userId, title: inferArticleTitle(content), preview, material_type: materialType, content, analysis });
-  if (result.error) throw new Error(`保存已学范文失败：${result.error.message}`);
+  const preview = content.replace(/\s+/g, " ").trim().slice(0, 200);
+  await pool.query(
+    `insert into learned_articles (user_id, material_type, preview, analysis)
+     values ($1, $2, $3, $4::jsonb)`,
+    [userId, materialType, preview, JSON.stringify(analysis)],
+  );
 }
 
 export async function deleteLearnedArticle(userId: string, articleId: string) {
-  const supabase = createServiceClient();
-  const articleResult = await supabase.from("learned_articles").select("material_type").eq("user_id", userId).eq("id", articleId).maybeSingle<{ material_type: string }>();
-  if (articleResult.error) throw new Error(`读取已学范文失败：${articleResult.error.message}`);
-  const materialType = articleResult.data?.material_type;
+  const articleResult = await pool.query(
+    "select material_type from learned_articles where user_id = $1 and id = $2 limit 1",
+    [userId, articleId],
+  );
+  const materialType = (articleResult.rows[0] as { material_type?: string } | undefined)?.material_type;
 
-  const result = await supabase.from("learned_articles").delete().eq("user_id", userId).eq("id", articleId);
-  if (result.error) throw new Error(`删除已学范文失败：${result.error.message}`);
+  await pool.query("delete from learned_articles where user_id = $1 and id = $2", [userId, articleId]);
 
   if (materialType) {
-    const [styleData, learnedArticles] = await Promise.all([
-      getStyleRules(userId, materialType),
-      getLearnedArticles(userId, materialType),
-    ]);
+    const learnedArticles = await getLearnedArticles(userId, materialType);
+    const styleData = await getStyleRules(userId, materialType);
     await updateStyleRuleRecord(userId, materialType, {
       ...styleData,
       stats: { learned_count: learnedArticles.length },

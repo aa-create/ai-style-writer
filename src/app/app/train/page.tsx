@@ -1,9 +1,7 @@
+﻿import { redirect } from "next/navigation";
 import { TrainWorkspace } from "@/app/app/train/TrainWorkspace";
-import {
-  defaultGlobalPhrases,
-  defaultPropagandaStyleRule,
-} from "@/lib/defaults";
-import { createClient } from "@/lib/supabase/server";
+import { defaultGlobalPhrases, defaultPropagandaStyleRule } from "@/lib/defaults";
+import { getCurrentUserId } from "@/lib/auth";
 
 const initialSnapshot = {
   phrases: defaultGlobalPhrases.phrases,
@@ -13,14 +11,9 @@ const initialSnapshot = {
   counts: { learnedCount: 0, phraseCount: 0, expressionCount: 0, templateCount: 0 },
 };
 
-export default async function TrainPage() {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return null;
+export default function TrainPage() {
+  if (!getCurrentUserId()) {
+    redirect("/login");
   }
 
   return <TrainWorkspace initialSnapshot={initialSnapshot} />;

@@ -9,6 +9,22 @@ function createSSEMessage(data: string) {
   return `data: ${data}\n\n`;
 }
 
+function createTextDecodeStream() {
+  const decoder = new TextDecoder();
+
+  return new TransformStream<Uint8Array, string>({
+    transform(chunk, controller) {
+      controller.enqueue(decoder.decode(chunk, { stream: true }));
+    },
+    flush(controller) {
+      const tail = decoder.decode();
+      if (tail) {
+        controller.enqueue(tail);
+      }
+    },
+  });
+}
+
 export function createAIStreamResponse(
   stream: ReadableStream<Uint8Array>,
   options?: AIStreamOptions,
@@ -18,7 +34,7 @@ export function createAIStreamResponse(
   let doneSent = false;
 
   const sseStream = stream
-    .pipeThrough(new TextDecoderStream())
+    .pipeThrough(createTextDecodeStream())
     .pipeThrough(new EventSourceParserStream())
     .pipeThrough(
       new TransformStream({

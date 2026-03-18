@@ -1,18 +1,16 @@
+﻿import { redirect } from "next/navigation";
 import { WriteWorkspace } from "@/app/app/write/WriteWorkspace";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUserId } from "@/lib/auth";
 import { getOrCreateUserData } from "@/lib/style-service";
 
 export default async function WritePage() {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const userId = getCurrentUserId();
 
-  if (!user) {
-    return null;
+  if (!userId) {
+    redirect("/login");
   }
 
-  await getOrCreateUserData(user.id);
+  await getOrCreateUserData(userId);
 
   return <WriteWorkspace />;
 }
