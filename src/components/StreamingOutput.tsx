@@ -1,5 +1,7 @@
 ﻿"use client";
 
+import { ArticleText } from "@/components/ArticleText";
+
 type StreamingOutputProps = {
   content: string;
   isGenerating: boolean;
@@ -33,9 +35,7 @@ export function StreamingOutput({
 
       <div className="min-h-[320px] rounded-2xl bg-stone-50 p-5">
         {content ? (
-          <pre className="whitespace-pre-wrap break-words font-serif text-[15px] leading-8 text-slate-800">
-            {content}
-          </pre>
+          <ArticleText content={content} className="space-y-4 whitespace-pre-wrap break-words font-serif" />
         ) : (
           <div className="flex min-h-[280px] items-center justify-center text-sm text-slate-400">
             {isGenerating ? "AI 正在生成全文，请稍候..." : "确认要点后，这里将显示生成结果。"}

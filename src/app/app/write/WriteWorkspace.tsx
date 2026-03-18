@@ -1,6 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ArticleText } from "@/components/ArticleText";
 import { FileUpload } from "@/components/FileUpload";
 import { parseFile } from "@/lib/file-parser";
 
@@ -90,8 +91,6 @@ function MessageBubble({
   canSave: boolean;
 }) {
   const isUser = message.role === "user";
-  const firstLine = message.content.split(/\r?\n/)[0] ?? "";
-  const rest = message.content.slice(firstLine.length).trimStart();
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -114,8 +113,7 @@ function MessageBubble({
           <p className="whitespace-pre-wrap break-words text-sm leading-7">{message.content}</p>
         ) : (
           <div>
-            {firstLine ? <p className="whitespace-pre-wrap break-words text-[15px] font-semibold leading-7">{firstLine}</p> : null}
-            {rest ? <p className="mt-2 whitespace-pre-wrap break-words text-[15px] leading-8">{rest}</p> : null}
+            <ArticleText content={message.content} className="space-y-4 whitespace-pre-wrap break-words" />
             {message.isStreaming ? <p className="mt-3 text-xs text-slate-400">AI 正在生成...</p> : null}
             {!message.isStreaming ? (
               <AssistantMessageActions
@@ -177,7 +175,7 @@ export function WriteWorkspace() {
     }
 
     const attachmentNames = attachments.map((item) => item.name);
-  const attachmentText = attachments.map((item) => `【附件：${item.name}】\n${item.content}`).join("\n\n");
+    const attachmentText = attachments.map((item) => `【附件：${item.name}】\n${item.content}`).join("\n\n");
     const content = [text, attachmentText].filter(Boolean).join("\n\n");
     const userMessage: ChatBubble = { id: createId(), role: "user", content, attachments: attachmentNames };
     const assistantId = createId();

@@ -197,7 +197,7 @@ export async function saveGenerationHistory(
     style_used: null,
     content: finalOutput,
   });
-  if (result.error) throw new Error(`?????????${result.error.message}`);
+  if (result.error) throw new Error(`保存生成记录失败：${result.error.message}`);
 }
 
 export async function getLearnedArticles(userId: string, materialType: string) {
@@ -222,11 +222,13 @@ export async function deleteLearnedArticle(userId: string, articleId: string) {
   if (result.error) throw new Error(`删除已学范文失败：${result.error.message}`);
 
   if (materialType) {
-    const styleData = await getStyleRules(userId, materialType);
-    const nextCount = Math.max(0, styleData.stats.learned_count - 1);
+    const [styleData, learnedArticles] = await Promise.all([
+      getStyleRules(userId, materialType),
+      getLearnedArticles(userId, materialType),
+    ]);
     await updateStyleRuleRecord(userId, materialType, {
       ...styleData,
-      stats: { learned_count: nextCount },
+      stats: { learned_count: learnedArticles.length },
     });
   }
 }
@@ -292,12 +294,15 @@ export async function learnFromAnalysis(userId: string, materialType: string, co
   const paraPush = pushPattern(nextStyle.rules.paragraph_patterns, analysis.paragraph_style, 5); nextStyle.rules.paragraph_patterns = paraPush.list; if (paraPush.added) newPatternsCount += 1;
   const paraSample = analysis.best_paragraph.trim();
   if (paraSample) nextStyle.example_paragraphs = pushUnique(nextStyle.example_paragraphs, paraSample, (a, b) => a === b, 3).list;
-  nextStyle.stats = { learned_count: styleData.stats.learned_count + 1 };
-  await updateStyleRuleRecord(userId, materialType, nextStyle);
   await saveLearnedArticle(userId, materialType, content, analysis);
+  const learnedArticles = await getLearnedArticles(userId, materialType);
+  nextStyle.stats = { learned_count: learnedArticles.length };
+  await updateStyleRuleRecord(userId, materialType, nextStyle);
 
   let summaryUpdated = false;
-  if (nextStyle.stats.learned_count % 5 === 0) summaryUpdated = await generateStyleSummaryForUser(userId, materialType);
+  if (nextStyle.stats.learned_count > 0 && nextStyle.stats.learned_count % 5 === 0) {
+    summaryUpdated = await generateStyleSummaryForUser(userId, materialType);
+  }
 
   const snapshot = await getStyleLibrarySnapshot(userId, materialType);
   return { newPhraseCount: newPhrases.length, newExpressionsCount: newExpressions.length, newPatternsCount, summaryUpdated, snapshot };
@@ -305,17 +310,27 @@ export async function learnFromAnalysis(userId: string, materialType: string, co
 
 export async function getStyleLibrarySnapshot(userId: string, materialType: string) {
   await getOrCreateUserData(userId);
-  const [globalData, styleData, learnedArticles] = await Promise.all([getGlobalPhrases(userId), getStyleRules(userId, materialType), getLearnedArticles(userId, materialType)]);
+  const [globalData, styleData, learnedArticles] = await Promise.all([
+    getGlobalPhrases(userId),
+    getStyleRules(userId, materialType),
+    getLearnedArticles(userId, materialType),
+  ]);
+  const learnedCount = learnedArticles.length;
+  const snapshotStyleData =
+    styleData.stats.learned_count === learnedCount
+      ? styleData
+      : { ...styleData, stats: { ...styleData.stats, learned_count: learnedCount } };
+
   return {
     phrases: globalData.phrases,
     learnedArticles,
-    styleRules: styleData,
-    stats: styleData.stats,
+    styleRules: snapshotStyleData,
+    stats: snapshotStyleData.stats,
     counts: {
-      learnedCount: styleData.stats.learned_count,
+      learnedCount,
       phraseCount: countAllPhrases(globalData.phrases),
       expressionCount: globalData.phrases.特殊表达?.length ?? 0,
-      templateCount: styleData.subtitle_styles.length,
+      templateCount: snapshotStyleData.subtitle_styles.length,
     },
   };
 }
