@@ -326,7 +326,7 @@ export function WriteWorkspace() {
       <div className="mb-4 flex items-center justify-between gap-3 rounded-[28px] border border-slate-200 bg-white px-5 py-4 shadow-sm">
         <div>
           <p className="text-sm font-medium text-slate-500">对话式写作</p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-900 sm:text-3xl">宣传稿写作台</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-900 sm:text-3xl">材料写作台</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -364,7 +364,7 @@ export function WriteWorkspace() {
         ) : (
           <div className="flex h-full min-h-[420px] items-center justify-center text-center text-sm leading-7 text-slate-400">
             <div>
-              <p className="text-base font-medium text-slate-600">把你想写的内容随便说说，AI 会直接起草整篇宣传稿。</p>
+              <p className="text-base font-medium text-slate-600">把你想写的内容随便说说，AI 会直接起草整篇材料。</p>
               <p className="mt-2">如果不满意，就继续输入修改意见，比如“标题短一点”“第二段加点数据”“更像简报口吻”。</p>
             </div>
           </div>
@@ -419,3 +419,4 @@ export function WriteWorkspace() {
     </section>
   );
 }
+
