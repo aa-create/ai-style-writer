@@ -23,6 +23,7 @@ type LearnAnalysis = {
 };
 type LearnedArticleRow = {
   id: string;
+  content?: string | null;
   preview: string;
   material_type: string;
   analysis?: LearnAnalysis | null;
@@ -75,11 +76,12 @@ function inferArticleTitle(content: string) {
 }
 
 function normalizeLearnedArticle(record: LearnedArticleRow) {
+  const articleContent = record.content?.trim() ? record.content : record.preview;
   return {
     id: record.id,
     title: inferArticleTitle(record.preview),
     material_type: record.material_type,
-    content: record.preview,
+    content: articleContent,
     analysis: record.analysis ?? null,
     created_at: record.created_at,
   };
@@ -226,7 +228,7 @@ export async function saveGenerationHistory(userId: string, materialType: string
 
 export async function getLearnedArticles(userId: string, materialType: string) {
   const result = await pool.query(
-    `select id, preview, material_type, analysis, created_at
+    `select id, content, preview, material_type, analysis, created_at
        from learned_articles
       where user_id = $1 and material_type = $2
       order by created_at desc`,
@@ -238,9 +240,9 @@ export async function getLearnedArticles(userId: string, materialType: string) {
 export async function saveLearnedArticle(userId: string, materialType: string, content: string, analysis: LearnAnalysis) {
   const preview = content.replace(/\s+/g, " ").trim().slice(0, 200);
   await pool.query(
-    `insert into learned_articles (user_id, material_type, preview, analysis)
-     values ($1, $2, $3, $4::jsonb)`,
-    [userId, materialType, preview, JSON.stringify(analysis)],
+    `insert into learned_articles (user_id, material_type, content, preview, analysis)
+     values ($1, $2, $3, $4, $5::jsonb)`,
+    [userId, materialType, content, preview, JSON.stringify(analysis)],
   );
 }
 
