@@ -1,4 +1,5 @@
 import { type MaterialStyleRules, type PhraseMap } from "@/lib/defaults";
+import { SCENE_PROMPTS, type SceneKey } from "@/lib/prompts";
 
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -89,6 +90,27 @@ function buildExampleParagraphs(paragraphs: string[]) {
   ].join("\n");
 }
 
+function buildStyleSummarySection(scene: SceneKey | null | undefined, styleSummary: string) {
+  const parts: string[] = [];
+
+  if (scene) {
+    const scenePrompt = SCENE_PROMPTS[scene];
+    if (scenePrompt) {
+      parts.push(scenePrompt);
+    }
+  }
+
+  if (styleSummary) {
+    parts.push(
+      scene
+        ? `## 本单位写作风格要求\n\n以下是根据用户上传的范文提炼的本单位写作风格特征，写作时请严格遵循：\n\n${styleSummary}`
+        : styleSummary,
+    );
+  }
+
+  return parts.length ? `${parts.join("\n\n")}\n\n` : "";
+}
+
 export function trimMessages(messages: ChatMessage[]): ChatMessage[] {
   if (messages.length <= 16) return messages;
   return [messages[0], ...messages.slice(-12)];
@@ -97,10 +119,11 @@ export function trimMessages(messages: ChatMessage[]): ChatMessage[] {
 export function buildConversationSystemPrompt(
   styleData: MaterialStyleRules,
   mergedPhrases: PhraseMap,
+  scene?: SceneKey | null,
 ) {
   const styleSummary = styleData.style_summary.trim();
   const exampleParagraphs = buildExampleParagraphs(styleData.example_paragraphs);
-  const resolvedStyleSummary = styleSummary ? `${styleSummary}\n\n` : "";
+  const resolvedStyleSummary = buildStyleSummarySection(scene, styleSummary);
 
   return WRITE_PROMPT_TEMPLATE
     .replace("{style_summary}", resolvedStyleSummary)

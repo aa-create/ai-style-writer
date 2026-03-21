@@ -1,9 +1,10 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArticleText } from "@/components/ArticleText";
 import { FileUpload } from "@/components/FileUpload";
 import { parseFile } from "@/lib/file-parser";
+import { SCENES, type SceneKey } from "@/lib/prompts";
 
 type ChatRole = "user" | "assistant";
 type ChatMessage = { role: ChatRole; content: string };
@@ -140,6 +141,7 @@ export function WriteWorkspace() {
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState("");
   const [savedLatest, setSavedLatest] = useState(false);
+  const [selectedScene, setSelectedScene] = useState<SceneKey | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -165,6 +167,10 @@ export function WriteWorkspace() {
 
   function handleRemoveFile(fileName: string) {
     setAttachments((current) => current.filter((item) => item.name !== fileName));
+  }
+
+  function handleSceneSelect(scene: SceneKey) {
+    setSelectedScene((current) => (current === scene ? null : scene));
   }
 
   async function sendMessage() {
@@ -197,6 +203,7 @@ export function WriteWorkspace() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           materialType: "propaganda",
+          scene: selectedScene,
           messages: trimHistory(nextMessages).map(({ role, content: messageContent }) => ({ role, content: messageContent })),
         }),
         signal: controller.signal,
@@ -326,7 +333,7 @@ export function WriteWorkspace() {
       <div className="mb-4 flex items-center justify-between gap-3 rounded-[28px] border border-slate-200 bg-white px-5 py-4 shadow-sm">
         <div>
           <p className="text-sm font-medium text-slate-500">对话式写作</p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-900 sm:text-3xl">材料写作台</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-900 sm:text-3xl">写作台</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -386,6 +393,28 @@ export function WriteWorkspace() {
             </div>
           ) : null}
           {error ? <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+          <div className="mb-3">
+            <p className="mb-2 text-xs font-medium text-slate-400">选择材料类型</p>
+            <div className="flex flex-wrap gap-2">
+              {SCENES.map((scene) => {
+                const isActive = selectedScene === scene.key;
+                return (
+                  <button
+                    key={scene.key}
+                    type="button"
+                    onClick={() => handleSceneSelect(scene.key)}
+                    className={[
+                      "rounded-full px-4 py-2 text-sm font-medium transition",
+                      isActive ? "bg-slate-900 text-white hover:bg-slate-800" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                    ].join(" ")}
+                    title={scene.desc}
+                  >
+                    {scene.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="flex items-end gap-3">
             <div className="shrink-0">
               <FileUpload
@@ -419,4 +448,3 @@ export function WriteWorkspace() {
     </section>
   );
 }
-
